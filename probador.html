@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Probador de báscula · La Tropa</title>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2724;background:#f5f7f5}
+header{background:#183c29;color:#fff;padding:14px 18px}header b{font-size:18px}
+main{max-width:1000px;margin:0 auto;padding:16px}
+.card{background:#fff;border:1px solid #dce4de;border-radius:14px;padding:14px 16px;margin-bottom:14px}
+button,select{font:inherit;font-weight:700;border:1px solid #cfd9d2;background:#fff;color:#183c29;border-radius:10px;padding:9px 14px;cursor:pointer}
+button.pri{background:#183c29;color:#fff;border-color:#183c29}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#log{font-family:ui-monospace,Consolas,monospace;font-size:13px;background:#0f1a14;color:#d7f5df;border-radius:10px;padding:12px;height:46vh;overflow:auto;white-space:pre-wrap}
+#log .t{color:#8fb89c}#log .p{color:#ffd479}
+.note{font-size:13px;color:#6c7b70}ol{margin:6px 0 0 18px;padding:0}li{margin:3px 0}
+.st{font-weight:700}.st.on{color:#1f6b3a}.st.off{color:#a54332}
+</style>
+</head>
+<body>
+<header><b>Probador de báscula Tru-Test XR5000</b><br><small>Muestra exactamente lo que manda la báscula por Bluetooth o cable serie</small></header>
+<main>
+<div class="card"><b>Antes de empezar</b>
+<ol class="note">
+<li>Usá <b>Google Chrome o Microsoft Edge</b> en una notebook con Bluetooth.</li>
+<li>Emparejá la XR5000 con la notebook desde la configuración de Bluetooth de Windows o Mac.</li>
+<li>En la XR5000, activá la salida por Bluetooth / serie con <b>«EID, peso cuando se registra el peso»</b>.</li>
+<li>Tocá <b>Conectar</b>, elegí la XR5000 de la lista y pesá 3 o 4 animales (o apretá el botón de registrar de la báscula).</li>
+<li>Tocá <b>Copiar todo</b> y pegá el resultado en el chat.</li>
+</ol></div>
+<div class="card">
+<div class="row"><label class="note">Velocidad <select id="baud"><option>9600</option><option>19200</option><option>38400</option><option>57600</option><option>115200</option></select></label>
+<button class="pri" id="con">Conectar</button><button id="desc" disabled>Desconectar</button><button id="copy">Copiar todo</button><button id="clr">Limpiar</button>
+<span class="st off" id="st">Sin conectar</span></div>
+<p class="note">Si aparecen caracteres raros, desconectá, cambiá la velocidad (probá 9600 y 19200) y volvé a conectar.</p>
+<div id="log"></div>
+<p class="note">Líneas recibidas: <b id="n">0</b> · Pesos reconocidos: <b id="np">0</b></p>
+</div>
+</main>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},PORT=null,READER=null,ON=false,TXT=[],N=0,NP=0;
+var SPP='00001101-0000-1000-8000-00805f9b34fb';
+function ts(){var d=new Date();return d.toTimeString().slice(0,8)+'.'+String(d.getMilliseconds()).padStart(3,'0')}
+function hex(s){return Array.prototype.map.call(s,function(c){var h=c.charCodeAt(0).toString(16).toUpperCase();return (h.length<2?'0':'')+h}).join(' ')}
+function parsear(t){t=String(t).trim();var eid=(t.match(/\b(\d{3})[\s-]?(\d{12})\b/)||[]).slice(1).join('');
+  var l=t.replace(/\b\d{3}[\s-]?\d{12}\b/g,' ').replace(/\b\d{1,4}[\/.-]\d{1,2}[\/.-]\d{1,4}\b/g,' ').replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g,' ');
+  var kg=l.match(/(-?\d+(?:[.,]\d+)?)\s*kg/i),p=null;if(kg)p=parseFloat(kg[1].replace(',','.'));else{var n=(l.match(/-?\d+(?:[.,]\d+)?/g)||[]).map(function(x){return parseFloat(x.replace(',','.'))}).filter(function(x){return x>0&&x<=1500});if(n.length)p=n[n.length-1]}
+  return {peso:p,eid:eid}}
+function add(line){
+  N++;$('n').textContent=N;var r=parsear(line);if(r.peso)NP++;$('np').textContent=NP;
+  var txt='['+ts()+'] '+JSON.stringify(line)+'\n    HEX: '+hex(line)+'\n    → '+(r.peso?'peso '+r.peso+' kg':'sin peso')+(r.eid?' · caravana '+r.eid:'')+'\n';
+  TXT.push(txt);var d=document.createElement('div');d.innerHTML='<span class="t">['+ts()+']</span> '+line.replace(/[<&]/g,function(c){return c==='<'?'&lt;':'&amp;'})+'<br><span class="t">    HEX: '+hex(line)+'</span><br><span class="p">    → '+(r.peso?'peso '+r.peso+' kg':'sin peso')+(r.eid?' · caravana '+r.eid:'')+'</span>';
+  $('log').appendChild(d);$('log').scrollTop=1e9}
+function st(on,t){var s=$('st');s.className='st '+(on?'on':'off');s.textContent=t;$('con').disabled=on;$('desc').disabled=!on}
+$('con').onclick=async function(){
+  if(!('serial' in navigator)){alert('Este navegador no puede conectarse a la báscula. Abrí esta página en Google Chrome o Microsoft Edge.');return}
+  try{PORT=await navigator.serial.requestPort({allowedBluetoothServiceClassIds:[SPP]});var info=PORT.getInfo?PORT.getInfo():{};
+    await PORT.open({baudRate:+$('baud').value});ON=true;st(true,'Conectada a '+$('baud').value+' baudios');TXT.push('Conectado · '+new Date().toLocaleString()+' · baudios '+$('baud').value+' · '+JSON.stringify(info)+'\n');
+    var buf='',dec=new TextDecoder();
+    while(PORT.readable&&ON){READER=PORT.readable.getReader();try{while(true){var r=await READER.read();if(r.done)break;buf+=dec.decode(r.value,{stream:true});var p=buf.split(/\r\n|\r|\n/);buf=p.pop();p.forEach(function(x){if(x.length)add(x)});if(buf.length>300){add(buf);buf=''}}}catch(e){add('ERROR: '+(e&&e.message||e))}finally{try{READER.releaseLock()}catch(e){}}}
+    st(false,'Desconectada');
+  }catch(e){if(e&&e.name==='NotFoundError')return;st(false,'Error');alert('No se pudo conectar: '+(e&&e.message||e))}
+};
+$('desc').onclick=async function(){ON=false;try{if(READER)await READER.cancel()}catch(e){}try{await PORT.close()}catch(e){}st(false,'Desconectada')};
+$('copy').onclick=function(){var t='PROBADOR XR5000\n'+navigator.userAgent+'\n\n'+TXT.join('');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){alert('Copiado. Pegalo en el chat.')},function(){prompt('Copiá este texto:',t)})};
+$('clr').onclick=function(){$('log').innerHTML='';TXT=[];N=0;NP=0;$('n').textContent=0;$('np').textContent=0};
+if(!('serial' in navigator))st(false,'Este navegador no sirve: usá Chrome o Edge');
+})();
+</script>
+</body>
+</html>
